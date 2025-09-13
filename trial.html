@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Canvas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            color: #d1d5db; /* Light gray text for dark theme */
+            overflow: hidden; /* Prevent body scroll due to parallax */
+            background-color: #0d1226; /* Dark space-like background */
+        }
+        
+        .parallax-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background-size: cover;
+            background-position: center;
+        }
+
+        .parallax-layer-1 { background-image: url('https://placehold.co/1920x1080/0d1226/0b101e'); }
+        .parallax-layer-2 { background-image: url('https://placehold.co/1920x1080/0d1226/1a2a4d'); }
+        .parallax-layer-3 { background-image: url('https://placehold.co/1920x1080/0d1226/3b4d6b'); }
+
+        .modal {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+
+        #drawingCanvas {
+            touch-action: none;
+            cursor: crosshair;
+            background-color: #f3f4f6;
+        }
+
+        #colorPicker {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            width: 3rem;
+            height: 3rem;
+            background-color: transparent;
+            border: none;
+            cursor: pointer;
+        }
+
+        #colorPicker::-webkit-color-swatch {
+            border-radius: 9999px;
+            border: 2px solid #e5e7eb;
+        }
+
+        #colorPicker::-moz-color-swatch {
+            border-radius: 9999px;
+            border: 2px solid #e5e7eb;
+        }
+
+        .btn-fancy {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-fancy:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(139, 92, 246, 0.3);
+        }
+
+        .btn-fancy:active {
+            transform: translateY(1px);
+        }
+
+        .glassmorphism-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        #chatMessages {
+            scroll-behavior: smooth;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+    <!-- Parallax Background -->
+    <div class="parallax-bg parallax-layer-1"></div>
+    <div class="parallax-bg parallax-layer-2"></div>
+    <div class="parallax-bg parallax-layer-3"></div>
+
+    <!-- Message Modal -->
+    <div id="messageModal" class="modal fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+        <div class="glassmorphism-card rounded-lg p-6 shadow-xl max-w-sm w-full text-white">
+            <h2 id="modalTitle" class="text-xl font-bold mb-2"></h2>
+            <p id="modalMessage" class="mb-4"></p>
+            <button id="modalClose" class="w-full py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 btn-fancy">OK</button>
+        </div>
+    </div>
+
+    <main class="w-full max-w-7xl glassmorphism-card rounded-2xl shadow-xl p-6 md:p-10 flex flex-col lg:flex-row space-y-8 lg:space-y-0 lg:space-x-8 z-10">
+        <!-- Main Game Area -->
+        <div class="flex-1">
+            <h1 class="text-3xl md:text-4xl font-bold text-center text-white mb-2 drop-shadow-md">Cosmic Canvas</h1>
+            <p class="text-center text-gray-300 mb-6 md:mb-8">A collaborative drawing game guided by AI.</p>
+            
+            <div id="userIdDisplay" class="text-center text-sm text-gray-400 hidden mb-4">
+                <p>User ID: <span id="userIdSpan" class="font-mono text-xs break-all"></span></p>
+            </div>
+            
+            <div id="gameStatus" class="p-4 bg-purple-900 bg-opacity-30 rounded-xl shadow-inner mb-6 border border-purple-800">
+                <p id="currentPrompt" class="text-xl font-semibold text-center text-purple-300">Loading game...</p>
+                <p id="currentTurn" class="text-center text-gray-400 mt-2">Waiting for game to start...</p>
+                <p id="roundStatus" class="text-center text-gray-400 text-sm mt-1"></p>
+                <button id="listenPromptButton" class="py-1 px-3 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 transition-colors hidden btn-fancy mt-2 w-full">✨ Listen to Prompt</button>
+            </div>
+            
+            <!-- Canvas and Controls -->
+            <div class="relative w-full aspect-square rounded-xl overflow-hidden shadow-2xl bg-white border border-gray-300">
+                <canvas id="drawingCanvas" class="w-full h-full"></canvas>
+            </div>
+
+            <div class="mt-6 flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0 md:space-x-4">
+                <!-- Drawing Tools -->
+                <div class="flex items-center space-x-4">
+                    <div class="flex flex-col items-center">
+                        <label for="colorPicker" class="text-sm font-medium text-gray-300">Color</label>
+                        <input type="color" id="colorPicker" value="#374151" class="mt-1">
+                    </div>
+                    <div class="flex flex-col items-center w-32">
+                        <label for="thicknessSlider" class="text-sm font-medium text-gray-300">Thickness</label>
+                        <input type="range" id="thicknessSlider" min="1" max="10" value="4" class="mt-1 w-full accent-purple-600">
+                    </div>
+                    <button id="clearButton" class="py-2 px-4 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors btn-fancy">Clear</button>
+                </div>
+
+                <!-- Game Control Buttons -->
+                <div class="flex flex-col w-full md:w-auto md:flex-row space-y-4 md:space-y-0 md:space-x-4">
+                    <button id="newGameButton" class="flex-1 py-3 px-6 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition-colors btn-fancy">Start New Game</button>
+                    <button id="submitButton" class="flex-1 py-3 px-6 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors opacity-50 cursor-not-allowed btn-fancy" disabled>Submit Drawing</button>
+                </div>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loadingIndicator" class="mt-4 hidden flex items-center justify-center space-x-2 text-gray-400">
+                <svg class="animate-spin h-5 w-5 text-indigo-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Processing with AI...</span>
+            </div>
+             <!-- TTS Loading Indicator -->
+             <div id="ttsLoadingIndicator" class="mt-4 hidden flex items-center justify-center space-x-2 text-gray-400">
+                <svg class="animate-spin h-5 w-5 text-indigo-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Generating audio...</span>
+            </div>
+        </div>
+
+        <!-- Player List, Chat & Gallery -->
+        <div class="lg:w-1/3 flex flex-col space-y-6">
+            <!-- Player List -->
+            <div class="glassmorphism-card rounded-2xl p-6 md:p-8 flex-none shadow-inner">
+                <h2 class="text-2xl font-bold text-white mb-4">Players</h2>
+                <ul id="playerList" class="space-y-2">
+                    <!-- Player list will be dynamically added here -->
+                </ul>
+            </div>
+            
+            <!-- Chat -->
+            <div class="glassmorphism-card rounded-2xl p-6 md:p-8 flex-1 flex flex-col shadow-inner">
+                <h2 class="text-2xl font-bold text-white mb-4">Chat</h2>
+                <div id="chatMessages" class="flex-1 space-y-4 p-2 overflow-y-auto mb-4 border border-gray-500 rounded-lg">
+                    <!-- Chat messages will be dynamically added here -->
+                </div>
+                <div class="flex">
+                    <input type="text" id="chatInput" placeholder="Send a message..." class="flex-1 p-2 bg-gray-800 text-white rounded-l-lg border border-gray-600 focus:outline-none focus:border-purple-500">
+                    <button id="sendChatButton" class="py-2 px-4 bg-purple-600 text-white font-semibold rounded-r-lg hover:bg-purple-700 transition-colors">Send</button>
+                </div>
+            </div>
+            
+            <!-- Gallery -->
+            <div class="glassmorphism-card rounded-2xl p-6 md:p-8 flex-1 flex flex-col shadow-inner">
+                <h2 class="text-2xl font-bold text-white mb-4">Completed Games</h2>
+                <div id="galleryLoading" class="text-center text-gray-400">Loading gallery...</div>
+                <ul id="completedGamesList" class="space-y-6 overflow-y-auto">
+                    <!-- Completed games will be dynamically added here -->
+                </ul>
+            </div>
+        </div>
+    </main>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, sgnInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, updateDoc, setDoc, getDoc, collection, addDoc, serverTimestamp, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the environment
+        const appId = '1:242898721892:web:12f3793ef8b638b66e5371';
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+        const firebaseConfig = {
+            apiKey: "AIzaSyAsIpa87VY8SKbcqxpweHbdP1YjuVzyQ_g",
+            authDomain: "cosmic-canvas-game.firebaseapp.com",
+            projectId: "cosmic-canvas-game",
+            storageBucket: "cosmic-canvas-game.firebasestorage.app",
+            messagingSenderId: "242898721892",
+            appId: "1:242898721892:web:12f3793ef8b638b66e5371",
+            measurementId: "G-FR59KH7W1M"
+        };
+
+        //The initial aut token variable is also needed.
+        const initialAuthToken = null;
+        
+        // DOM elements
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const newGameButton = document.getElementById('newGameButton');
+        const submitButton = document.getElementById('submitButton');
+        const clearButton = document.getElementById('clearButton');
+        const colorPicker = document.getElementById('colorPicker');
+        const thicknessSlider = document.getElementById('thicknessSlider');
+        const currentPrompt = document.getElementById('currentPrompt');
+        const currentTurn = document.getElementById('currentTurn');
+        const roundStatus = document.getElementById('roundStatus');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const userIdSpan = document.getElementById('userIdSpan');
+        const playerList = document.getElementById('playerList');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const ttsLoadingIndicator = document.getElementById('ttsLoadingIndicator');
+        const galleryLoading = document.getElementById('galleryLoading');
+        const completedGamesList = document.getElementById('completedGamesList');
+        const chatInput = document.getElementById('chatInput');
+        const sendChatButton = document.getElementById('sendChatButton');
+        const chatMessages = document.getElementById('chatMessages');
+        const body = document.body;
+        const listenPromptButton = document.getElementById('listenPromptButton');
+
+        // Modal elements
+        const messageModal = document.getElementById('messageModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalClose = document.getElementById('modalClose');
+
+        // Firebase and User state
+        let auth = null;
+        let db = null;
+        let currentUser = null;
+        let drawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let isMyTurn = false;
+        let isProcessing = false;
+        let gameDocRef;
+        let playersCollectionRef;
+        let completedGamesCollectionRef;
+        let messagesCollectionRef;
+        const apiKey = "AIzaSyAsIpa87VY8SKbcqxpweHbdP1YjuVzyQ_g";
+        const maxRounds = 5;
+        let audioPlayer = null;
+
+        // Sound effects
+        const synth = new Tone.Synth().toDestination();
+        const startSound = new Tone.MembraneSynth().toDestination();
+        const submitSound = new Tone.MetalSynth().toDestination();
+
+        // Function to display the modal
+        function showModal(title, message) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            messageModal.classList.remove('hidden');
+        }
+
+        // Close the modal
+        modalClose.addEventListener('click', () => {
+            messageModal.classList.add('hidden');
+        });
+
+        // Parallax effect
+        body.addEventListener('mousemove', (e) => {
+            const layers = document.querySelectorAll('.parallax-bg');
+            const x = (window.innerWidth - e.pageX) / 100;
+            const y = (window.innerHeight - e.pageY) / 100;
+            
+            layers.forEach((layer, index) => {
+                const speed = (index + 1) * 2;
+                layer.style.transform = `translate(${x * speed}px, ${y * speed}px)`;
+            });
+        });
+
+        // --- Firebase Initialization and Auth ---
+        function initializeFirebase() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                
+                // Use a base collection reference for public data to ensure path consistency
+                const publicDataCollectionRef = collection(db, 'artifacts', appId, 'public', 'data');
+
+                // Initialize Firestore references
+                gameDocRef = doc(publicDataCollectionRef, 'game_state');
+                playersCollectionRef = collection(publicDataCollectionRef, 'players');
+                completedGamesCollectionRef = collection(publicDataCollectionRef, 'completed_games');
+                messagesCollectionRef = collection(publicDataCollectionRef, 'messages');
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        currentUser = user;
+                        userIdSpan.textContent = currentUser.uid;
+                        userIdDisplay.classList.remove('hidden');
+                        await registerPlayer(currentUser.uid);
+                        setupFirestoreListeners();
+                    } else {
+                        if (initialAuthToken) {
+                             await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                             await signInAnonymously(auth);
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Firebase initialization error:", error);
+                showModal("Error", "Failed to initialize Firebase. Please check the console for details.");
+            }
+        }
+
+        async function registerPlayer(userId) {
+            const playerDocRef = doc(playersCollectionRef, userId);
+            const playerDoc = await getDoc(playerDocRef);
+            if (!playerDoc.exists()) {
+                await setDoc(playerDocRef, {
+                    userId: userId,
+                    lastActive: serverTimestamp()
+                });
+            }
+        }
+
+        function setupFirestoreListeners() {
+            // Listen for game state changes
+            onSnapshot(gameDocRef, (doc) => {
+                if (doc.exists()) {
+                    const data = doc.data();
+                    const currentPainterId = data.currentPainterId;
+                    const round = data.round;
+                    isMyTurn = currentUser.uid === currentPainterId;
+
+                    currentPrompt.textContent = data.currentPrompt;
+                    currentTurn.textContent = isMyTurn ? "It's your turn to draw!" : `It's ${currentPainterId}'s turn.`;
+                    roundStatus.textContent = `Round ${round} of ${maxRounds}`;
+                    
+                    if (isMyTurn && round <= maxRounds) {
+                        submitButton.disabled = false;
+                        submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                        submitButton.textContent = (round === maxRounds) ? "Finalize & Submit" : "Submit Drawing";
+                    } else {
+                        submitButton.disabled = true;
+                        submitButton.classList.add('opacity-50', 'cursor-not-allowed');
+                    }
+                    
+                    if (data.currentPrompt && data.round > 0) {
+                        listenPromptButton.classList.remove('hidden');
+                    } else {
+                        listenPromptButton.classList.add('hidden');
+                    }
+
+                    if (data.drawingData) {
+                        const paths = JSON.parse(data.drawingData);
+                        renderCanvas(paths);
+                    } else {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    }
+                } else {
+                    currentPrompt.textContent = "No active game. Start a new one!";
+                    currentTurn.textContent = "";
+                    roundStatus.textContent = "";
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+            }, (error) => {
+                console.error("Firestore game state error:", error);
+                showModal("Error", "Failed to load game state. Check console for details.");
+            });
+
+            // Listen for player list changes
+            onSnapshot(playersCollectionRef, (snapshot) => {
+                playerList.innerHTML = '';
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const li = document.createElement('li');
+                    li.className = 'flex items-center space-x-2 text-gray-300';
+                    const activeIndicator = data.userId === currentUser.uid ? `<span class="h-2 w-2 bg-green-400 rounded-full"></span>` : `<span class="h-2 w-2 bg-gray-600 rounded-full"></span>`;
+                    li.innerHTML = `${activeIndicator}<span>${data.userId === currentUser.uid ? 'You' : data.userId}</span>`;
+                    playerList.appendChild(li);
+                });
+            }, (error) => {
+                console.error("Firestore player list error:", error);
+                showModal("Error", "Failed to load players. Check console for details.");
+            });
+
+            // Listen for chat messages
+            onSnapshot(query(messagesCollectionRef, orderBy('timestamp')), (snapshot) => {
+                chatMessages.innerHTML = '';
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const p = document.createElement('p');
+                    p.className = 'text-sm mb-1';
+                    p.innerHTML = `<span class="font-bold text-purple-300">${data.userId === currentUser.uid ? 'You' : data.userId}:</span> <span class="text-gray-200">${data.text}</span>`;
+                    chatMessages.appendChild(p);
+                });
+                chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll to latest message
+            }, (error) => {
+                console.error("Firestore chat messages error:", error);
+            });
+            
+            // Listen for completed games
+            onSnapshot(completedGamesCollectionRef, (snapshot) => {
+                galleryLoading.classList.add('hidden');
+                completedGamesList.innerHTML = '';
+                if (snapshot.empty) {
+                     completedGamesList.innerHTML = `<li class="text-center text-gray-400">No completed games yet.</li>`;
+                }
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const li = document.createElement('li');
+                    li.className = 'p-4 glassmorphism-card rounded-lg shadow-sm border border-gray-700 hover:shadow-md transition-shadow';
+                    
+                    const galleryCanvas = document.createElement('canvas');
+                    galleryCanvas.width = 300;
+                    galleryCanvas.height = 300;
+                    const galleryCtx = galleryCanvas.getContext('2d');
+                    renderCanvas(JSON.parse(data.finalDrawing), galleryCtx);
+
+                    const narrateButtonId = `narrate-${doc.id}`;
+                    li.innerHTML = `
+                        <h3 class="text-lg font-bold text-gray-200 mb-1">${data.finalTitle || 'Untitled Story'}</h3>
+                        <p class="text-sm text-gray-400 mb-2">${data.finalStory || 'No story generated.'}</p>
+                        <div class="mt-4 flex items-center justify-between">
+                            <button id="${narrateButtonId}" class="py-1 px-3 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 transition-colors btn-fancy">✨ Narrate Story</button>
+                        </div>
+                    `;
+                    li.insertBefore(galleryCanvas, li.querySelector('.mt-4'));
+                    completedGamesList.appendChild(li);
+
+                    document.getElementById(narrateButtonId).addEventListener('click', () => narrateText(data.finalStory));
+                });
+            }, (error) => {
+                console.error("Firestore gallery error:", error);
+                showModal("Error", "Failed to load gallery. Check console for details.");
+            });
+        }
+
+        // --- Canvas Drawing Logic ---
+        function resizeCanvas() {
+            const rect = canvas.parentNode.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            ctx.lineWidth = thicknessSlider.value;
+            ctx.strokeStyle = colorPicker.value;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+        }
+
+        function renderCanvas(paths, context = ctx) {
+            context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+            
+            paths.forEach(path => {
+                if (path.length > 1) {
+                    context.beginPath();
+                    context.strokeStyle = path[0].color || '#374151';
+                    context.lineWidth = path[0].thickness || 4;
+                    context.moveTo(path[0].x, path[0].y);
+                    for (let i = 1; i < path.length; i++) {
+                        context.lineTo(path[i].x, path[i].y);
+                    }
+                    context.stroke();
+                }
+            });
+        }
+
+        let currentPath = [];
+        function startDrawing(e) {
+            if (!isMyTurn || isProcessing) return;
+            drawing = true;
+            [lastX, lastY] = getCoords(e);
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.strokeStyle = colorPicker.value;
+            ctx.lineWidth = thicknessSlider.value;
+            currentPath.push({x: lastX, y: lastY, color: colorPicker.value, thickness: thicknessSlider.value});
+        }
+
+        function draw(e) {
+            if (!drawing) return;
+            const [x, y] = getCoords(e);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            [lastX, lastY] = [x, y];
+            currentPath.push({x: lastX, y: lastY});
+        }
+
+        function stopDrawing() {
+            if (drawing) {
+                drawing = false;
+                if (currentPath.length > 0) {
+                     // Add an empty array to signal the end of a stroke
+                    currentPath.push([]); 
+                }
+            }
+        }
+
+        function getCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            let x, y;
+            if (e.touches) {
+                x = e.touches[0].clientX - rect.left;
+                y = e.touches[0].clientY - rect.top;
+            } else {
+                x = e.clientX - rect.left;
+                y = e.clientY - rect.top;
+            }
+            return [x, y];
+        }
+
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+        canvas.addEventListener('mousemove', draw);
+
+        canvas.addEventListener('touchstart', (e) => startDrawing(e));
+        canvas.addEventListener('touchend', stopDrawing);
+        canvas.addEventListener('touchcancel', stopDrawing);
+        canvas.addEventListener('touchmove', (e) => draw(e));
+
+        clearButton.addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            currentPath = [];
+        });
+
+        // Chat functionality
+        async function sendMessage() {
+            const text = chatInput.value.trim();
+            if (text === "") return;
+            
+            try {
+                await addDoc(messagesCollectionRef, {
+                    userId: currentUser.uid,
+                    text: text,
+                    timestamp: serverTimestamp()
+                });
+                chatInput.value = '';
+            } catch (error) {
+                console.error("Error sending message:", error);
+                showModal("Chat Error", "Failed to send message.");
+            }
+        }
+
+        sendChatButton.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // --- Game Logic and LLM Integration ---
+        newGameButton.addEventListener('click', async () => {
+            if (isProcessing) return;
+            isProcessing = true;
+            loadingIndicator.classList.remove('hidden');
+            newGameButton.disabled = true;
+            startSound.triggerAttackRelease("C4", "8n");
+
+            const initialPrompt = "The beginning of a new universe. A single star is born.";
+            const players = (await getDocs(playersCollectionRef)).docs.map(doc => doc.id);
+            if (players.length === 0) {
+                 showModal("No Players", "Wait for at least one other player to join before starting a new game.");
+                 isProcessing = false;
+                 newGameButton.disabled = false;
+                 loadingIndicator.classList.add('hidden');
+                 return;
+            }
+            
+            try {
+                await setDoc(gameDocRef, {
+                    currentPrompt: initialPrompt,
+                    currentPainterId: players[0],
+                    drawingData: null,
+                    players: players,
+                    round: 1,
+                    history: [],
+                    timestamp: serverTimestamp()
+                });
+                showModal("Game Started!", "A new game has begun. Start drawing!");
+            } catch (error) {
+                console.error("Error starting new game:", error);
+                showModal("Error", "Failed to start a new game. Check console for details.");
+            } finally {
+                isProcessing = false;
+                newGameButton.disabled = false;
+                loadingIndicator.classList.add('hidden');
+            }
+        });
+
+        submitButton.addEventListener('click', async () => {
+            if (!isMyTurn || isProcessing) return;
+            isProcessing = true;
+            loadingIndicator.classList.remove('hidden');
+            submitButton.disabled = true;
+            submitSound.triggerAttackRelease("C2", "8n");
+
+            const gameDoc = await getDoc(gameDocRef);
+            const gameData = gameDoc.data();
+            const currentRound = gameData.round;
+            const isFinalRound = currentRound >= maxRounds;
+
+            const canvasData = canvas.toDataURL('image/png');
+            const base64Data = canvasData.split(',')[1];
+            const mimeType = 'image/png';
+            
+            let newPrompt = null;
+            
+            const textGenPayload = {
+                contents: [{
+                    parts: [
+                        { text: `Based on this drawing and the previous prompt, "${gameData.currentPrompt}", create a new, creative prompt for the next artist. The prompt should be a single, concise sentence.` },
+                        { inlineData: { mimeType, data: base64Data } }
+                    ]
+                }],
+                generationConfig: {
+                    maxOutputTokens: 50,
+                },
+            };
+            
+            const textGenApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetchWithRetry(textGenApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(textGenPayload)
+                });
+                const result = await response.json();
+                newPrompt = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+            } catch (error) {
+                console.error("Error generating next prompt:", error);
+                showModal("AI Error", "Failed to get next prompt from AI. Try again.");
+                isProcessing = false;
+                loadingIndicator.classList.add('hidden');
+                submitButton.disabled = false;
+                return;
+            }
+
+            const newHistoryItem = {
+                prompt: gameData.currentPrompt,
+                drawingData: JSON.stringify(currentPath),
+                player: currentUser.uid,
+                timestamp: new Date().toISOString()
+            };
+            
+            let updatedHistory = gameData.history || [];
+            updatedHistory.push(newHistoryItem);
+
+            currentPath = [];
+            
+            if (isFinalRound) {
+                const finalPromptPayload = {
+                    contents: [{
+                        parts: [{ text: `Based on the following game history, provide a compelling title and a short narrative summary of the complete artwork. The history is a series of prompts and drawings. History: ${JSON.stringify(updatedHistory)}`}]
+                    }],
+                    generationConfig: {
+                        maxOutputTokens: 200
+                    }
+                };
+                
+                let finalTitle = "Untitled Masterpiece";
+                let finalStory = "A cosmic story unfolds.";
+
+                try {
+                     const finalResponse = await fetchWithRetry(textGenApiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(finalPromptPayload)
+                    });
+                     const finalResult = await finalResponse.json();
+                     const finalOutput = finalResult?.candidates?.[0]?.content?.parts?.[0]?.text;
+                     const lines = finalOutput.split('\n');
+                     if (lines.length > 0) finalTitle = lines[0].trim().replace(/[^\w\s]/g, '');
+                     if (lines.length > 1) finalStory = lines.slice(1).join('\n').trim().replace(/[^\w\s.,?!'"-]/g, '');
+                } catch (error) {
+                    console.error("Error generating final summary:", error);
+                }
+
+                await addDoc(completedGamesCollectionRef, {
+                    players: gameData.players,
+                    finalDrawing: JSON.stringify(updatedHistory.map(item => JSON.parse(item.drawingData || '[]')).flat()),
+                    history: updatedHistory,
+                    finalTitle: finalTitle,
+                    finalStory: finalStory,
+                    timestamp: serverTimestamp()
+                });
+                
+                await setDoc(gameDocRef, {
+                    currentPrompt: "Game over! A new masterpiece has been created.",
+                    currentPainterId: null,
+                    drawingData: null,
+                    round: 0,
+                    history: []
+                });
+
+                showModal("Game Over!", "The artwork is complete and has been saved to the gallery!");
+
+            } else {
+                const players = gameData.players;
+                const currentIndex = players.indexOf(currentUser.uid);
+                const nextIndex = (currentIndex + 1) % players.length;
+                const nextPainterId = players[nextIndex];
+                
+                await updateDoc(gameDocRef, {
+                    currentPrompt: newPrompt.replace(/[^\w\s.,?!'"-]/g, ''),
+                    currentPainterId: nextPainterId,
+                    drawingData: JSON.stringify(currentPath),
+                    history: updatedHistory,
+                    round: currentRound + 1
+                });
+                showModal("Success", `Your drawing has been submitted! It's now ${nextPainterId}'s turn.`);
+            }
+
+            isProcessing = false;
+            loadingIndicator.classList.add('hidden');
+            submitButton.disabled = false;
+        });
+
+        // --- TTS Logic ---
+        async function narrateText(text) {
+            ttsLoadingIndicator.classList.remove('hidden');
+            const ttsPayload = {
+                contents: [{
+                    parts: [{ text: text }]
+                }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: "Kore" }
+                        }
+                    }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+            const ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetchWithRetry(ttsApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(ttsPayload)
+                });
+                const result = await response.json();
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const pcm16 = new Int16Array(pcmData);
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    
+                    if (audioPlayer) {
+                        audioPlayer.pause();
+                        audioPlayer.src = "";
+                    }
+                    audioPlayer = new Audio(audioUrl);
+                    audioPlayer.play();
+                } else {
+                    console.error("Invalid TTS response:", result);
+                    showModal("Audio Error", "Could not generate audio from the text.");
+                }
+            } catch (error) {
+                console.error("TTS API error:", error);
+                showModal("Audio Error", "Failed to generate audio. Check console for details.");
+            } finally {
+                ttsLoadingIndicator.classList.add('hidden');
+            }
+        }
+
+        // Helper functions for audio conversion
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function pcmToWav(pcmData, sampleRate) {
+            const buffer = new ArrayBuffer(44 + pcmData.length * 2);
+            const view = new DataView(buffer);
+
+            // RIFF chunk descriptor
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + pcmData.length * 2, true);
+            writeString(view, 8, 'WAVE');
+
+            // fmt chunk
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM format
+            view.setUint16(22, 1, true); // 1 channel
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true); // byte rate
+            view.setUint16(32, 2, true); // block align
+            view.setUint16(34, 16, true); // bits per sample
+
+            // data chunk
+            writeString(view, 36, 'data');
+            view.setUint32(40, pcmData.length * 2, true);
+
+            // Write PCM data
+            let offset = 44;
+            for (let i = 0; i < pcmData.length; i++) {
+                view.setInt16(offset, pcmData[i], true);
+                offset += 2;
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        listenPromptButton.addEventListener('click', () => {
+            narrateText(currentPrompt.textContent);
+        });
+
+        // Helper function for exponential backoff
+        async function fetchWithRetry(url, options, maxRetries = 5) {
+            let attempt = 0;
+            while (attempt < maxRetries) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.status === 429) {
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        attempt++;
+                        continue;
+                    }
+                    if (!response.ok) {
+                        throw new Error(`API call failed with status: ${response.status}`);
+                    }
+                    return response;
+                } catch (error) {
+                    if (attempt === maxRetries - 1) {
+                         throw error;
+                    }
+                    attempt++;
+                }
+            }
+        }
+        
+        window.onload = () => {
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            initializeFirebase();
+        };
+    </script>
+</body>
+</html>
